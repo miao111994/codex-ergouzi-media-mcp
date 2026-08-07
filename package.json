@@ -1,0 +1,17 @@
+{
+  "name": "codex-ergouzi-media-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone Codex plugin repository for Ergouzi media MCP.",
+  "license": "MIT",
+  "author": {
+    "name": "miao111994",
+    "url": "https://github.com/miao111994"
+  },
+  "homepage": "https://github.com/miao111994/codex-ergouzi-media-mcp",
+  "repository": "https://github.com/miao111994/codex-ergouzi-media-mcp",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  }
+}
