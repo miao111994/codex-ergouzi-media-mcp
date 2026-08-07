@@ -1,35 +1,52 @@
 # Ergouzi Media MCP
 
-This Codex plugin exposes Ergouzi media model lifecycle actions through a local MCP server.
+这个插件把 Ergouzi 的媒体能力暴露给 Codex，可用于管理图片、视频相关的预测任务。
 
-## Tools
+## 插件职责
 
-- `list_models`
-- `create_prediction`
-- `get_prediction`
-- `cancel_prediction`
-- `download_prediction`
+- 提供 MCP 工具
+- 读取本地凭据
+- 把本地图片、视频或音频路径转换为后端可接受的输入
+- 下载任务输出到本地
 
-## Runtime
+## 入口文件
 
-The server reads credentials from:
+- `.codex-plugin/plugin.json`：插件清单
+- `.mcp.json`：MCP 启动配置
+- `scripts/server.mjs`：MCP 服务入口
+- `scripts/lib.mjs`：核心业务逻辑
 
-1. `ERGOUZI_MEDIA_API_KEY`
-2. `ERGOUZI_API_KEY`
-3. `~/.config/ergouzi/credentials.json` on Unix-like systems
-4. `%APPDATA%\ergouzi\credentials.json` on Windows
+## 可用工具
 
-The base URL defaults to `https://ergouzi.life` and can be overridden with:
+- `list_models`：列出可用模型
+- `create_prediction`：创建预测任务
+- `get_prediction`：查询任务状态
+- `cancel_prediction`：取消任务
+- `download_prediction`：下载任务结果
 
-- `ERGOUZI_MEDIA_BASE_URL`
-- `ERGOUZI_BASE_URL`
+## 本地配置
 
-## Local file handling
+请确保存在 Ergouzi 配置文件：
 
-Model inputs may include `{ "$local_file": "C:/path/to/file.png" }` for documented media fields.
-The server converts the file to a data URI before submission and rejects oversized inputs.
+```text
+%APPDATA%\ergouzi\credentials.json
+```
 
-## Notes
+示例：
 
-- This plugin keeps prompt construction and model choice in the Skill layer.
-- The MCP server is transport-only and does not add server-side billing or routing logic.
+```json
+{
+  "api_key": "YOUR_API_KEY",
+  "base_url": "https://ergouzi.life"
+}
+```
+
+## 启动方式
+
+插件启动时会执行：
+
+```bash
+node scripts/server.mjs
+```
+
+MCP 服务随后会接收 Codex 的工具调用请求。

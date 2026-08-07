@@ -1,19 +1,36 @@
 # codex-ergouzi-media-mcp
-配合 Ergouzi 自研生图视频模型调用的 MCP 服务。
 
-This repository packages the `ergouzi-media-mcp` Codex plugin as a standalone GitHub repo.
+这是一个把 `ergouzi-media-mcp` 封装成独立 GitHub 仓库的 Codex 插件项目。
 
-## What is included
+它的目标是：让你可以在本地安装、调试和分享这个 MCP 服务，而不依赖额外的发布平台流程。
 
-- `plugins/ergouzi-media-mcp`: the Codex plugin
-- `LICENSE`: MIT license
+## 项目内容
 
-## Install in Codex
+- `plugins/ergouzi-media-mcp/`：实际可被 Codex 识别的插件目录
+- `LICENSE`：开源协议
+- `package.json` / `package-lock.json`：仓库级依赖入口
 
-Clone this repository, then install the plugin from the local repo path in Codex.
-If you are testing locally, point Codex at `plugins/ergouzi-media-mcp`.
+## 目录结构
 
-### Suggested local setup
+```text
+codex-ergouzi-media-mcp/
+├─ plugins/
+│  └─ ergouzi-media-mcp/
+│     ├─ .codex-plugin/plugin.json
+│     ├─ .mcp.json
+│     ├─ README.md
+│     └─ scripts/
+│        ├─ server.mjs
+│        └─ lib.mjs
+├─ package.json
+├─ package-lock.json
+├─ README.md
+└─ LICENSE
+```
+
+## 安装
+
+先把仓库拉到本地，再安装依赖：
 
 ```bash
 git clone https://github.com/miao111994/codex-ergouzi-media-mcp
@@ -21,21 +38,14 @@ cd codex-ergouzi-media-mcp
 npm install
 ```
 
-## Local runtime setup
+## Ergouzi 配置
 
-Install dependencies at the repository root:
+MCP 服务会从以下位置读取凭据：
 
-```bash
-npm install
-```
+- Windows：`%APPDATA%\ergouzi\credentials.json`
+- macOS / Linux：`~/.config/ergouzi/credentials.json`
 
-Then configure your Ergouzi credentials in:
-
-```text
-C:\Users\<you>\AppData\Roaming\ergouzi\credentials.json
-```
-
-Example:
+示例内容：
 
 ```json
 {
@@ -44,8 +54,34 @@ Example:
 }
 ```
 
-## Notes
+也可以使用环境变量覆盖：
 
-- The plugin manifest uses `author.name` and `author.url`.
-- `author.email` is optional and intentionally omitted here.
-- The server expects `@modelcontextprotocol/sdk` to be available from the repo root after `npm install`.
+- `ERGOUZI_MEDIA_API_KEY`
+- `ERGOUZI_MEDIA_BASE_URL`
+- `ERGOUZI_CONFIG_FILE`
+
+## 在 Codex 中使用
+
+把 Codex 指向插件目录：
+
+```text
+plugins/ergouzi-media-mcp
+```
+
+插件会通过 `.mcp.json` 启动 `scripts/server.mjs`，再由 `server.mjs` 调用 `lib.mjs` 里的实际逻辑。
+
+## 运行时工具
+
+插件当前提供这些 MCP 工具：
+
+- `list_models`
+- `create_prediction`
+- `get_prediction`
+- `cancel_prediction`
+- `download_prediction`
+
+## 说明
+
+- `author.name` 用于标识发布者。
+- `author.email` 可选，不写也可以。
+- `author.url` 建议保留，便于确认仓库来源。
