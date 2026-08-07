@@ -6,14 +6,19 @@ This repository packages the `ergouzi-media-mcp` Codex plugin as a standalone Gi
 ## What is included
 
 - `plugins/ergouzi-media-mcp`: the Codex plugin
-- `.agents/plugins/marketplace.json`: Codex marketplace entry
 - `LICENSE`: MIT license
 
 ## Install in Codex
 
+Clone this repository, then install the plugin from the local repo path in Codex.
+If you are testing locally, point Codex at `plugins/ergouzi-media-mcp`.
+
+### Suggested local setup
+
 ```bash
-codex plugin marketplace add miao111994/codex-ergouzi-media-mcp
-codex plugin add ergouzi-media-mcp@codex-ergouzi-media-mcp
+git clone https://github.com/miao111994/codex-ergouzi-media-mcp
+cd codex-ergouzi-media-mcp
+npm install
 ```
 
 ## Local runtime setup
