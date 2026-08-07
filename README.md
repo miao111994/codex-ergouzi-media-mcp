@@ -1,8 +1,9 @@
 # codex-ergouzi-media-mcp
+配合 Ergouzi 自研生图视频模型调用的 MCP 服务。
 
-A standalone Codex plugin repository for Ergouzi media predictions.
+This repository packages the `ergouzi-media-mcp` Codex plugin as a standalone GitHub repo.
 
-## What this repo contains
+## What is included
 
 - `plugins/ergouzi-media-mcp`: the Codex plugin
 - `.agents/plugins/marketplace.json`: Codex marketplace entry
@@ -42,4 +43,4 @@ Example:
 
 - The plugin manifest uses `author.name` and `author.url`.
 - `author.email` is optional and intentionally omitted here.
-- The plugin server expects the `@modelcontextprotocol/sdk` package to be available from this repo root after `npm install`.
+- The server expects `@modelcontextprotocol/sdk` to be available from the repo root after `npm install`.
