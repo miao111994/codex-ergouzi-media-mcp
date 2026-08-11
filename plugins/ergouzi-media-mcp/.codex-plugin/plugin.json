@@ -1,6 +1,6 @@
 {
   "name": "ergouzi-media-mcp",
-  "version": "0.1.0+codex.20260807",
+  "version": "0.2.0",
   "description": "Codex plugin that exposes Ergouzi media predictions through MCP tools.",
   "author": {
     "name": "miao111994",
@@ -21,7 +21,7 @@
     "longDescription": "A local MCP adapter for Ergouzi media models. It exposes model listing, prediction lifecycle, cancellation, and downloads while keeping local file resolution on the client machine.",
     "developerName": "miao111994",
     "category": "Developer Tools",
-    "capabilities": [],
+    "capabilities": ["Read", "Write"],
     "defaultPrompt": "Use ergouzi-media-mcp to manage media predictions."
   },
   "mcpServers": "./.mcp.json"

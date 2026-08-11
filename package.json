@@ -1,6 +1,6 @@
 {
   "name": "codex-ergouzi-media-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Standalone Codex plugin repository for Ergouzi media MCP.",
@@ -11,7 +11,15 @@
   },
   "homepage": "https://github.com/miao111994/codex-ergouzi-media-mcp",
   "repository": "https://github.com/miao111994/codex-ergouzi-media-mcp",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "validate": "node scripts/validate.mjs",
+    "test": "node --test test/lib.test.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.12.0"
+    "@modelcontextprotocol/sdk": "^1.30.0"
   }
 }

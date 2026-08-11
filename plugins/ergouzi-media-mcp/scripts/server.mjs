@@ -18,14 +18,13 @@ import {
 
 const SERVER_INFO = {
   name: 'ergouzi-media-mcp',
-  version: '0.1.0',
+  version: '0.2.0',
 };
 
 const credentialsPromise = loadCredentials();
 const server = new Server(SERVER_INFO, {
   capabilities: {
     tools: { listChanged: false },
-    resources: { subscribe: false, listChanged: false },
   },
 });
 

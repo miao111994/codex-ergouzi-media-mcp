@@ -2,11 +2,16 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
-import { fileURLToPath } from 'node:url';
+import dns from 'node:dns/promises';
+import net from 'node:net';
+import { Readable } from 'node:stream';
 
 const DEFAULT_BASE_URL = 'https://ergouzi.life';
 const MAX_JSON_BYTES = 4 * 1024 * 1024;
 const MAX_LOCAL_MEDIA_BYTES = 3 * 1024 * 1024;
+const MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024;
+const DOWNLOAD_TIMEOUT_MS = 120000;
+const MAX_REDIRECTS = 5;
 const TERMINAL_STATUSES = new Set(['succeeded', 'failed', 'canceled', 'unknown']);
 
 const IMAGE_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -85,7 +90,7 @@ export function normalizeBaseUrl(value) {
   if (parsed.search || parsed.hash || (parsed.pathname !== '' && parsed.pathname !== '/')) {
     throw new Error('Ergouzi base URL must not include a path, query, or fragment');
   }
-  if (parsed.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1'].includes(parsed.hostname)) {
+  if (parsed.protocol !== 'https:' && !isLoopbackHost(parsed.hostname)) {
     throw new Error('Ergouzi base URL must use HTTPS unless it targets localhost');
   }
   return raw;
@@ -127,7 +132,7 @@ export async function apiJson(credentials, method, pathName, payload = undefined
   const headers = {
     Accept: 'application/json',
     Authorization: `Bearer ${credentials.apiKey}`,
-    'User-Agent': 'ergouzi-media-mcp/0.1.0',
+    'User-Agent': 'ergouzi-media-mcp/0.2.0',
     ...extraHeaders,
   };
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
@@ -230,8 +235,7 @@ async function prepareOne(value, allowedTypes) {
 }
 
 async function resolveModelInput(model, input) {
-  const spec = MODEL_MEDIA_FIELDS[model];
-  if (!spec) throw new Error(`Unsupported model: ${model}`);
+  const spec = MODEL_MEDIA_FIELDS[model] || {};
   if (!isObject(input)) throw new Error('Prediction input must be a JSON object');
   const resolved = structuredClone(input);
   for (const [fieldName, fieldSpec] of Object.entries(spec)) {
@@ -257,8 +261,9 @@ async function resolveModelInput(model, input) {
 }
 
 export async function createPrediction(credentials, model, input, idempotencyKey = nowUuid()) {
-  const [owner, modelName] = String(model).split('/', 2);
-  if (!owner || !modelName || modelName.includes('/')) {
+  const modelParts = String(model).split('/');
+  const [owner, modelName] = modelParts;
+  if (modelParts.length !== 2 || !owner || !modelName) {
     throw new Error(`Invalid model name: ${model}`);
   }
   const resolvedInput = await resolveModelInput(model, input);
@@ -312,7 +317,7 @@ export async function pollPrediction(credentials, taskId, waitSeconds = 0, pollI
 
 function outputDirPath(value) {
   const raw = value ? String(value) : '';
-  return path.resolve(raw || path.join(process.cwd(), 'output', 'ergouzi-media-mcp'));
+  return path.resolve(raw || path.join(process.cwd(), 'outputs', 'ergouzi-media-mcp'));
 }
 
 function sanitizeFileStem(value) {
@@ -366,17 +371,145 @@ function replaceAutoExtension(targetFile, extension) {
   return path.join(parsed.dir, parsed.name + extension);
 }
 
-async function fetchRedirectSafe(url, headers = {}, maxRedirects = 5) {
+function isLocalHostname(hostname) {
+  const normalized = String(hostname || '').toLowerCase().replace(/^\[|\]$/g, '').replace(/\.$/, '');
+  return normalized === 'localhost' || normalized.endsWith('.localhost') || normalized.endsWith('.local') || normalized.endsWith('.internal');
+}
+
+function ipv4ToNumber(address) {
+  const parts = String(address).split('.').map((part) => Number(part));
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return null;
+  return (((parts[0] * 256 + parts[1]) * 256 + parts[2]) * 256) + parts[3];
+}
+
+function isPrivateIpv4(address) {
+  const value = ipv4ToNumber(address);
+  if (value === null) return false;
+  const first = value >>> 24;
+  const second = (value >>> 16) & 0xff;
+  return (
+    first === 0 ||
+    first === 10 ||
+    first === 127 ||
+    (first === 100 && second >= 64 && second <= 127) ||
+    (first === 169 && second === 254) ||
+    (first === 172 && second >= 16 && second <= 31) ||
+    (first === 192 && second === 168) ||
+    (first === 198 && (second === 18 || second === 19)) ||
+    first >= 224
+  );
+}
+
+function expandIpv6(address) {
+  const raw = String(address).toLowerCase().split('%', 1)[0];
+  const sections = raw.split('::');
+  if (sections.length > 2) return null;
+  const hasCompression = sections.length === 2;
+  const parseSection = (section) => {
+    if (!section) return [];
+    const parts = section.split(':');
+    const last = parts.at(-1);
+    if (last && last.includes('.')) {
+      const ipv4 = ipv4ToNumber(last);
+      if (ipv4 === null) return null;
+      parts.splice(-1, 1, (ipv4 >>> 16).toString(16), (ipv4 & 0xffff).toString(16));
+    }
+    if (parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null;
+    return parts;
+  };
+  const left = parseSection(sections[0]);
+  const right = parseSection(sections[1] || '');
+  if (!left || !right) return null;
+  const missing = 8 - left.length - right.length;
+  if ((hasCompression && missing < 1) || (!hasCompression && missing !== 0)) return null;
+  return [...left, ...Array.from({ length: missing }, () => '0'), ...right].map((part) => Number.parseInt(part, 16));
+}
+
+function ipv6ToBigInt(address) {
+  const groups = expandIpv6(address);
+  if (!groups) return null;
+  return groups.reduce((value, group) => (value << 16n) | BigInt(group), 0n);
+}
+
+function isPrivateIp(address) {
+  const normalized = String(address || '').replace(/^\[|\]$/g, '');
+  const version = net.isIP(normalized);
+  if (version === 4) return isPrivateIpv4(normalized);
+  if (version !== 6) return false;
+  const value = ipv6ToBigInt(normalized);
+  if (value === null) return false;
+  const mappedIpv4Prefix = value >> 32n;
+  if (mappedIpv4Prefix === 0xffffn) {
+    const mapped = Number(value & 0xffffffffn);
+    return isPrivateIpv4([
+      (mapped >>> 24) & 0xff,
+      (mapped >>> 16) & 0xff,
+      (mapped >>> 8) & 0xff,
+      mapped & 0xff,
+    ].join('.'));
+  }
+  return (
+    value === 0n ||
+    value === 1n ||
+    (value >= 0xfc000000000000000000000000000000n && value <= 0xfdffffffffffffffffffffffffffffffn) ||
+    (value >= 0xfe800000000000000000000000000000n && value <= 0xfebfffffffffffffffffffffffffffffn)
+  );
+}
+
+function isRestrictedHost(hostname) {
+  return isLocalHostname(hostname) || isPrivateIp(hostname);
+}
+
+function isLoopbackHost(hostname) {
+  const normalized = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  if (normalized === 'localhost' || normalized.endsWith('.localhost')) return true;
+  if (net.isIP(normalized) === 4) return normalized.split('.')[0] === '127';
+  return net.isIP(normalized) === 6 && ipv6ToBigInt(normalized) === 1n;
+}
+
+async function assertSafeDownloadUrl(value, baseUrl) {
+  const parsed = new URL(value);
+  const base = new URL(baseUrl);
+  if (parsed.username || parsed.password) throw new Error('Prediction output URL must not include credentials');
+  const restrictedTarget = isRestrictedHost(parsed.hostname);
+  const allowLoopback = isLoopbackHost(base.hostname) && isLoopbackHost(parsed.hostname) && parsed.protocol === base.protocol;
+  if (parsed.protocol !== 'https:' && !allowLoopback) {
+    throw new Error('Completed prediction output must use HTTPS');
+  }
+  if (restrictedTarget && !allowLoopback) {
+    throw new Error('Completed prediction output must not target a private or local address');
+  }
+  if (net.isIP(parsed.hostname) === 0 && !isLocalHostname(parsed.hostname)) {
+    const addresses = await dns.lookup(parsed.hostname, { all: true, verbatim: true });
+    if (!addresses.length || addresses.some((item) => isPrivateIp(item.address))) {
+      throw new Error('Completed prediction output hostname resolves to a private or local address');
+    }
+  }
+  return parsed;
+}
+
+async function fetchRedirectSafe(url, baseUrl, headers = {}, maxRedirects = MAX_REDIRECTS) {
   let currentUrl = url;
   let currentHeaders = { ...headers };
   for (let attempt = 0; attempt <= maxRedirects; attempt += 1) {
-    const response = await fetch(currentUrl, {
-      method: 'GET',
-      headers: currentHeaders,
-      redirect: 'manual',
-    });
+    await assertSafeDownloadUrl(currentUrl, baseUrl);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(new Error('Download timed out')), DOWNLOAD_TIMEOUT_MS);
+    let response;
+    try {
+      response = await fetch(currentUrl, {
+        method: 'GET',
+        headers: currentHeaders,
+        redirect: 'manual',
+        signal: controller.signal,
+      });
+    } catch (error) {
+      clearTimeout(timer);
+      throw error;
+    }
     if (response.status >= 300 && response.status < 400) {
       const location = response.headers.get('location');
+      clearTimeout(timer);
       if (!location) throw new Error(`Redirect response without Location for ${currentUrl}`);
       const nextUrl = new URL(location, currentUrl).toString();
       const previousOrigin = new URL(currentUrl).origin;
@@ -386,7 +519,12 @@ async function fetchRedirectSafe(url, headers = {}, maxRedirects = 5) {
       if (previousOrigin !== nextOrigin) delete currentHeaders.Authorization;
       continue;
     }
-    return response;
+    await assertSafeDownloadUrl(response.url || currentUrl, baseUrl);
+    return {
+      response,
+      abort: () => controller.abort(new Error('Download aborted')),
+      release: () => clearTimeout(timer),
+    };
   }
   throw new Error('Too many redirects while downloading prediction output');
 }
@@ -404,36 +542,64 @@ async function saveOneDownload(credentials, source, targetFile) {
   const absoluteTarget = path.resolve(targetFile);
   const baseUrl = new URL(credentials.baseUrl);
   const resolvedSource = new URL(source, credentials.baseUrl).toString();
-  const parsed = new URL(resolvedSource);
-  const localBase =
-    baseUrl.protocol === 'http:' &&
-    ['localhost', '127.0.0.1', '::1'].includes(baseUrl.hostname);
-  const localOutput = ['localhost', '127.0.0.1', '::1'].includes(parsed.hostname);
-  if (parsed.protocol !== 'https:' && !(localBase && parsed.protocol === 'http:')) {
-    throw new Error('Completed prediction output must be an HTTP or HTTPS URL');
-  }
-  if (localOutput && !localBase) {
-    throw new Error('Completed prediction output must not target localhost');
-  }
-  const headers = { Accept: '*/*', 'User-Agent': 'ergouzi-media-mcp/0.1.0' };
+  const parsed = await assertSafeDownloadUrl(resolvedSource, baseUrl.toString());
+  const headers = { Accept: '*/*', 'User-Agent': 'ergouzi-media-mcp/0.2.0' };
   if (parsed.origin === baseUrl.origin) headers.Authorization = `Bearer ${credentials.apiKey}`;
-  const response = await fetchRedirectSafe(parsed.toString(), headers);
-  const finalTarget = path.resolve(
-    replaceAutoExtension(absoluteTarget, extensionFromType(response.headers.get('content-type') || '', response.url || resolvedSource)),
-  );
-  if (await fs.stat(finalTarget).catch(() => null)) {
-    throw new Error(`Output file already exists: ${finalTarget}`);
+  const request = await fetchRedirectSafe(parsed.toString(), baseUrl.toString(), headers);
+  let tempPath = '';
+  let tempHandle = null;
+  try {
+    const { response } = request;
+    if (!response.ok) {
+      throw new Error(`Prediction output download returned HTTP ${response.status}`);
+    }
+    const contentLength = Number.parseInt(response.headers.get('content-length') || '', 10);
+    if (Number.isFinite(contentLength) && contentLength > MAX_DOWNLOAD_BYTES) {
+      throw new Error(`Prediction output exceeds the ${MAX_DOWNLOAD_BYTES} byte download limit`);
+    }
+    if (!response.body) throw new Error('Prediction output response has no body');
+    const finalTarget = path.resolve(
+      replaceAutoExtension(absoluteTarget, extensionFromType(response.headers.get('content-type') || '', response.url || resolvedSource)),
+    );
+    if (await fs.stat(finalTarget).catch(() => null)) {
+      throw new Error(`Output file already exists: ${finalTarget}`);
+    }
+    await fs.mkdir(path.dirname(finalTarget), { recursive: true });
+    tempPath = `${finalTarget}.part-${crypto.randomUUID()}`;
+    tempHandle = await fs.open(tempPath, 'wx');
+    let bytes = 0;
+    for await (const chunk of Readable.fromWeb(response.body)) {
+      bytes += chunk.byteLength;
+      if (bytes > MAX_DOWNLOAD_BYTES) {
+        request.abort();
+        throw new Error(`Prediction output exceeds the ${MAX_DOWNLOAD_BYTES} byte download limit`);
+      }
+      await tempHandle.write(chunk);
+    }
+    await tempHandle.sync();
+    await tempHandle.close();
+    tempHandle = null;
+    try {
+      await fs.rename(tempPath, finalTarget);
+    } catch (error) {
+      if (error.code === 'EEXIST' || error.code === 'EPERM') {
+        throw new Error(`Output file already exists: ${finalTarget}`);
+      }
+      throw error;
+    }
+    tempPath = '';
+    return {
+      source,
+      url: response.url || resolvedSource,
+      path: finalTarget,
+      contentType: response.headers.get('content-type') || '',
+      bytes,
+    };
+  } finally {
+    request.release();
+    if (tempHandle) await tempHandle.close().catch(() => {});
+    if (tempPath) await fs.rm(tempPath, { force: true }).catch(() => {});
   }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await fs.mkdir(path.dirname(finalTarget), { recursive: true });
-  await fs.writeFile(finalTarget, buffer);
-  return {
-    source: source,
-    url: response.url,
-    path: finalTarget,
-    contentType: response.headers.get('content-type') || '',
-    bytes: buffer.length,
-  };
 }
 
 export async function downloadPrediction(credentials, taskId, options = {}) {
