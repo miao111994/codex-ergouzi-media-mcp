@@ -132,7 +132,7 @@ export async function apiJson(credentials, method, pathName, payload = undefined
   const headers = {
     Accept: 'application/json',
     Authorization: `Bearer ${credentials.apiKey}`,
-    'User-Agent': 'ergouzi-media-mcp/0.2.0',
+    'User-Agent': 'ergouzi-media-mcp/0.2.1',
     ...extraHeaders,
   };
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
@@ -543,7 +543,7 @@ async function saveOneDownload(credentials, source, targetFile) {
   const baseUrl = new URL(credentials.baseUrl);
   const resolvedSource = new URL(source, credentials.baseUrl).toString();
   const parsed = await assertSafeDownloadUrl(resolvedSource, baseUrl.toString());
-  const headers = { Accept: '*/*', 'User-Agent': 'ergouzi-media-mcp/0.2.0' };
+  const headers = { Accept: '*/*', 'User-Agent': 'ergouzi-media-mcp/0.2.1' };
   if (parsed.origin === baseUrl.origin) headers.Authorization = `Bearer ${credentials.apiKey}`;
   const request = await fetchRedirectSafe(parsed.toString(), baseUrl.toString(), headers);
   let tempPath = '';

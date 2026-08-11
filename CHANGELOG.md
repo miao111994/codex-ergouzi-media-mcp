@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 - 2026-08-11
+
+- 增加 `npm run audit`，在 npm audit endpoint 不可用时回退到 OSV Scanner API。
+- 增加 GitHub Dependabot 配置。
+
 ## 0.2.0 - 2026-08-11
 
 - 校验每一跳下载重定向，阻止私有、回环和链路本地地址。

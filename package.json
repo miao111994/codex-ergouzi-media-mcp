@@ -1,6 +1,6 @@
 {
   "name": "codex-ergouzi-media-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "type": "module",
   "description": "Standalone Codex plugin repository for Ergouzi media MCP.",
@@ -17,7 +17,8 @@
   "scripts": {
     "validate": "node scripts/validate.mjs",
     "test": "node --test test/lib.test.mjs",
-    "smoke": "node scripts/smoke.mjs"
+    "smoke": "node scripts/smoke.mjs",
+    "audit": "node scripts/audit.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0"

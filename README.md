@@ -139,10 +139,23 @@ node scripts/server.mjs
 npm run validate
 npm test
 npm run smoke
+npm run audit
 ```
 
 测试不会调用真实 API，下载测试使用本地模拟响应。
 
+## 依赖审计
+
+`npm audit` 依赖当前配置的 registry audit 接口。部分镜像只提供包下载，不提供 npm audit endpoint，因此可能返回 `NOT_IMPLEMENTED`；官方 endpoint 也可能因本机网络或 npm 版本返回接口错误。
+
+本仓库提供了带 fallback 的审计命令：
+
+```bash
+npm run audit
+```
+
+它会先尝试官方 npm audit endpoint，失败后自动使用 OSV Scanner API 扫描 `package-lock.json` 中的 npm 依赖。GitHub 仓库同时启用了 Dependabot，用于持续发现依赖更新和已知漏洞。
+
 ## 发布版本
 
-当前版本为 `0.2.0`。版本变更记录见 `CHANGELOG.md`。
+当前版本为 `0.2.1`。版本变更记录见 `CHANGELOG.md`。
